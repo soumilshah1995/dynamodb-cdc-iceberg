@@ -1,0 +1,127 @@
+service: dynamodb-cdc-s3-pipeline
+
+frameworkVersion: '3'
+
+provider:
+  stage: dev
+  name: aws
+  runtime: python3.11
+  memorySize: 512
+  timeout: 300
+  architecture: x86_64
+  region: ${env:AWS_REGION, 'us-east-1'}
+  stackTags:
+    product: datateam
+    env: ${env:ENVIRONMENT, 'dev'}
+    created-date: 2024-12-29
+    team: data-engineering
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:PutObjectAcl
+          Resource:
+            - !GetAtt UserProfileCDCBucket.Arn
+            - !Join ['', [!GetAtt UserProfileCDCBucket.Arn, '/*']]
+        - Effect: Allow
+          Action:
+            - dynamodb:DescribeStream
+            - dynamodb:GetRecords
+            - dynamodb:GetShardIterator
+            - dynamodb:ListStreams
+          Resource:
+            - !GetAtt UserProfilesTable.StreamArn
+
+useDotenv: true
+
+functions:
+  userProfileCDCProcessor:
+    name: ${env:ENVIRONMENT, 'dev'}-user-profile-cdc-processor
+    handler: handler.lambda_handler
+    environment:
+      S3_BUCKET: !Ref UserProfileCDCBucket
+      S3_PREFIX: user_profiles
+      ENVIRONMENT: ${env:ENVIRONMENT, 'dev'}
+    events:
+      - stream:
+          type: dynamodb
+          arn: !GetAtt UserProfilesTable.StreamArn
+          batchSize: 100
+          startingPosition: LATEST
+          maximumRetryAttempts: 3
+          maximumRecordAgeInSeconds: 3600
+          bisectBatchOnFunctionError: true
+          parallelizationFactor: 1
+          enabled: true
+
+resources:
+  Resources:
+    UserProfilesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:ENVIRONMENT, 'dev'}-user-profiles
+        AttributeDefinitions:
+          - AttributeName: user_id
+            AttributeType: S
+          - AttributeName: created_at
+            AttributeType: N
+        KeySchema:
+          - AttributeName: user_id
+            KeyType: HASH
+          - AttributeName: created_at
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        Tags:
+          - Key: Environment
+            Value: ${env:ENVIRONMENT, 'dev'}
+          - Key: Purpose
+            Value: user-profile-storage
+
+    UserProfileCDCBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${env:ENVIRONMENT, 'dev'}-user-profile-cdc-${aws:accountId}
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        LifecycleConfiguration:
+          Rules:
+            - Id: TransitionToIA
+              Status: Enabled
+              Transitions:
+                - TransitionInDays: 30
+                  StorageClass: STANDARD_IA
+        Tags:
+          - Key: Environment
+            Value: ${env:ENVIRONMENT, 'dev'}
+          - Key: Purpose
+            Value: cdc-events-storage
+
+outputs:
+  UserProfilesTableName:
+    Description: DynamoDB User Profiles Table Name
+    Value: !Ref UserProfilesTable
+
+  UserProfilesTableArn:
+    Description: DynamoDB User Profiles Table ARN
+    Value: !GetAtt UserProfilesTable.Arn
+
+  UserProfilesStreamArn:
+    Description: DynamoDB Stream ARN
+    Value: !GetAtt UserProfilesTable.StreamArn
+
+  CDCBucketName:
+    Description: S3 Bucket for CDC Events
+    Value: !Ref UserProfileCDCBucket

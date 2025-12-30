@@ -1,0 +1,14 @@
+MIT License
+Copyright (c) 2025 soumilshah
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including withou# dynamodb-cdc-iceberg
+Repository: dynamodb-cdc-ice,Repository: dynamodb- sThis project contains code to cf Contents
+- handler.py - Lambda entrypoint
+- serverless.yml - Serverless Framework configuration
+- spark_jobs/ - Spark job code
+Usage
+1. Configu a- handl p- serverless.yml - Serverless Fde- spark_jobs/ - Spark job code
+Usage
+1. Configure AWarUsage
+1. Configure AWS credenAS1. C, 2. Deploy with Serverless: `npx serverless deploy --stage dev` or `serveTELicense: MIT
